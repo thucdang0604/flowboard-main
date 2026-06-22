@@ -40,6 +40,7 @@ interface GenerationState {
       // prompt — required for batch auto-prompt to keep poses distinct
       // across the 4 generated images.
       prompts?: string[];
+      identityMode?: boolean;
     },
   ): Promise<void>;
 
@@ -153,6 +154,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
     sourceMediaIds?: string[];
     variantCount?: number;
     prompts?: string[];
+    identityMode?: boolean;
   }) {
     const projectId = await get().ensureProjectId();
     if (projectId === null) return;
@@ -184,12 +186,15 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
 
     // Optimistically update node — record variantCount so the placeholder
     // grid matches the eventual variant count even before generation finishes.
-    const variantCount = Math.max(1, Math.min(opts.variantCount ?? 1, 4));
+    const variantCount = opts.identityMode
+      ? 1
+      : Math.max(1, Math.min(opts.variantCount ?? 1, 4));
     useBoardStore.getState().updateNodeData(rfId, {
       status: "queued",
       prompt: opts.prompt,
       error: undefined,
       variantCount,
+      identityMode: opts.identityMode || undefined,
       mediaIds: undefined,
       mediaId: undefined,
     });
@@ -282,6 +287,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
           paygate_tier:
             opts.paygateTier ?? get().paygateTier ?? "PAYGATE_TIER_ONE",
           variant_count: variantCount,
+          identity_mode: opts.identityMode ?? false,
           // User's image model preference from the Settings panel.
           // Backend resolves the nickname → real Flow model identifier.
           image_model: useSettingsStore.getState().imageModel,
@@ -391,6 +397,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
               aspectRatio: opts.aspectRatio,
               renderedAt: new Date().toISOString(),
               error: partialError ?? undefined,
+              identityMode: opts.identityMode || undefined,
               ...(stampedImageModel ? { imageModel: stampedImageModel } : {}),
               ...(stampedVideoQuality ? { videoQuality: stampedVideoQuality } : {}),
             });
@@ -424,6 +431,7 @@ export const useGenerationStore = create<GenerationState>((set, get) => ({
                   // when this run was clean; otherwise persist the
                   // partial summary so it survives reload.
                   error: partialError ?? null,
+                  identityMode: opts.identityMode || null,
                   ...(stampedImageModel ? { imageModel: stampedImageModel } : {}),
                   ...(stampedVideoQuality ? { videoQuality: stampedVideoQuality } : {}),
                 },

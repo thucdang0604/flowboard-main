@@ -387,6 +387,31 @@ async def test_handle_gen_image_defaults_variant_count_to_1(monkeypatch):
     assert captured["variant_count"] == 1
 
 
+@pytest.mark.asyncio
+async def test_handle_gen_image_identity_mode_clamps_variant_and_wraps_prompt(monkeypatch):
+    captured: dict = {}
+
+    class _Stub:
+        async def gen_image(self, **kwargs):
+            captured.update(kwargs)
+            return {"raw": {}, "media_ids": ["a"], "media_entries": []}
+
+    monkeypatch.setattr(flow_sdk_module, "_sdk", _Stub())
+    await _handle_gen_image(
+        {
+            "prompt": "wedding portrait in a garden",
+            "project_id": "abcd1234",
+            "variant_count": 4,
+            "prompts": ["a", "b", "c", "d"],
+            "identity_mode": True,
+        }
+    )
+    assert captured["variant_count"] == 1
+    assert captured["prompts"] is None
+    assert captured["prompt"].startswith("Identity lock:")
+    assert "wedding portrait in a garden" in captured["prompt"]
+
+
 def test_gen_image_variant_count_replicates_request_items():
     """Unit test against the SDK's request body — verify N items go out."""
     from flowboard.services.flow_sdk import FlowSDK

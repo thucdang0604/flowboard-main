@@ -79,6 +79,10 @@ export interface FlowboardNodeData extends Record<string, unknown> {
   // plain text in that case so the user knows it's an estimate.
   imageModel?: string;
   videoQuality?: string;
+  // Image-generation mode for real-person / wedding workflows. When true,
+  // dispatch clamps variants to one and wraps prompts with identity-preserving
+  // instructions before they reach Flow.
+  identityMode?: boolean;
   // Character-builder selections — persisted on dispatch so the detail
   // panel can show "Country / Vibe / Gender" pills under METADATA. Keys
   // (`vn`, `clean`, `female`) match the constants in

@@ -514,12 +514,17 @@ export interface AutoPromptBatchResponse {
 export async function autoPromptBatch(
   nodeId: number,
   count: number,
-  opts?: { camera?: string },
+  opts?: { camera?: string; identityMode?: boolean },
 ): Promise<AutoPromptBatchResponse> {
   const res = await fetch("/api/prompt/auto-batch", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ node_id: nodeId, count, camera: opts?.camera }),
+    body: JSON.stringify({
+      node_id: nodeId,
+      count,
+      camera: opts?.camera,
+      identity_mode: opts?.identityMode ?? false,
+    }),
   });
   if (!res.ok) {
     throw new Error(await extractErrorMessage(res));
@@ -529,12 +534,16 @@ export async function autoPromptBatch(
 
 export async function autoPrompt(
   nodeId: number,
-  opts?: { camera?: string },
+  opts?: { camera?: string; identityMode?: boolean },
 ): Promise<AutoPromptResponse> {
   const res = await fetch("/api/prompt/auto", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ node_id: nodeId, camera: opts?.camera }),
+    body: JSON.stringify({
+      node_id: nodeId,
+      camera: opts?.camera,
+      identity_mode: opts?.identityMode ?? false,
+    }),
   });
   if (!res.ok) {
     throw new Error(await extractErrorMessage(res));

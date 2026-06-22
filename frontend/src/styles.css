@@ -3225,6 +3225,41 @@ button:disabled {
   border-left-color: var(--accent);
 }
 
+.identity-lock-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(110, 231, 183, 0.24);
+  border-radius: 8px;
+  background: rgba(110, 231, 183, 0.06);
+  cursor: pointer;
+}
+
+.identity-lock-toggle input {
+  margin-top: 2px;
+  accent-color: var(--success);
+}
+
+.identity-lock-toggle__body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.identity-lock-toggle__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.identity-lock-toggle__hint {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 /* Native <select> styled to match the dialog's chip/input aesthetic.
    Used by the Generate-video model picker — replaces the chip row for
    denser layout when the option list is longer than the chip row can

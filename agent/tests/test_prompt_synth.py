@@ -172,6 +172,26 @@ async def test_auto_prompt_calls_provider_with_upstream_briefs(client, monkeypat
     assert matches >= 4, f"only matched {matches} pose options in pool"
 
 
+@pytest.mark.asyncio
+async def test_auto_prompt_identity_mode_adds_identity_lock_clause(client, monkeypatch):
+    ids = _seed_board_with_chain()
+    captured: dict = {}
+
+    async def stub_run(feature, prompt, *, system_prompt=None, timeout=0):
+        captured["prompt"] = prompt
+        captured["system_prompt"] = system_prompt
+        return "Realistic wedding portrait preserving ref_image_1 identity"
+
+    monkeypatch.setattr(prompt_synth, "run_llm", stub_run)
+
+    out = await prompt_synth.auto_prompt(ids["target_id"], identity_mode=True)
+    sp = captured["system_prompt"] or ""
+    assert "IDENTITY LOCK MODE" in sp
+    assert "preserve facial identity" in sp.lower()
+    assert "ref_image_1:" in captured["prompt"]
+    assert out.startswith("Realistic wedding portrait")
+
+
 def _seed_couple_via_image_siblings() -> dict:
     """Seed a board where the target image has 2 image upstream siblings,
     each wrapping a different character grandparent. Mirrors the real-world
@@ -910,8 +930,9 @@ async def test_auto_prompt_caps_long_responses(client, monkeypatch):
 def test_route_happy_path(client, monkeypatch):
     ids = _seed_board_with_chain()
 
-    async def stub(node_id, *, camera=None):
+    async def stub(node_id, *, camera=None, identity_mode=False):
         assert node_id == ids["target_id"]
+        assert identity_mode is False
         return "synthesized prompt"
 
     monkeypatch.setattr(prompt_synth, "auto_prompt", stub)
@@ -926,8 +947,9 @@ def test_route_passes_camera_arg_through(client, monkeypatch):
     ids = _seed_board_with_chain()
     captured: dict = {}
 
-    async def stub(node_id, *, camera=None):
+    async def stub(node_id, *, camera=None, identity_mode=False):
         captured["camera"] = camera
+        captured["identity_mode"] = identity_mode
         return "ok"
 
     monkeypatch.setattr(prompt_synth, "auto_prompt", stub)
@@ -937,6 +959,24 @@ def test_route_passes_camera_arg_through(client, monkeypatch):
     )
     assert r.status_code == 200, r.text
     assert captured["camera"] == "static"
+    assert captured["identity_mode"] is False
+
+
+def test_route_passes_identity_mode_through(client, monkeypatch):
+    ids = _seed_board_with_chain()
+    captured: dict = {}
+
+    async def stub(node_id, *, camera=None, identity_mode=False):
+        captured["identity_mode"] = identity_mode
+        return "ok"
+
+    monkeypatch.setattr(prompt_synth, "auto_prompt", stub)
+    r = client.post(
+        "/api/prompt/auto",
+        json={"node_id": ids["target_id"], "identity_mode": True},
+    )
+    assert r.status_code == 200, r.text
+    assert captured["identity_mode"] is True
 
 
 @pytest.mark.asyncio
@@ -1017,8 +1057,9 @@ def test_route_auto_batch_passes_through(client, monkeypatch):
     ids = _seed_board_with_chain()
     captured: dict = {}
 
-    async def stub(node_id, count, *, camera=None):
+    async def stub(node_id, count, *, camera=None, identity_mode=False):
         captured["count"] = count
+        captured["identity_mode"] = identity_mode
         return [f"prompt-{i}" for i in range(count)]
 
     monkeypatch.setattr(prompt_synth, "auto_prompt_batch", stub)
@@ -1030,6 +1071,7 @@ def test_route_auto_batch_passes_through(client, monkeypatch):
     body = r.json()
     assert len(body["prompts"]) == 4
     assert captured["count"] == 4
+    assert captured["identity_mode"] is False
 
 
 def test_route_auto_batch_rejects_bad_count(client):
@@ -1041,7 +1083,7 @@ def test_route_auto_batch_rejects_bad_count(client):
 
 
 def test_route_502_on_synth_failure(client, monkeypatch):
-    async def stub(node_id, *, camera=None):
+    async def stub(node_id, *, camera=None, identity_mode=False):
         raise prompt_synth.PromptSynthError("auto-prompt provider failed: timeout")
 
     monkeypatch.setattr(prompt_synth, "auto_prompt", stub)
