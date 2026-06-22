@@ -20,25 +20,6 @@
 
 ---
 
-### ☕ Sponsor this project
-
-<table align="center">
-  <tr>
-    <td align="center" width="50%">
-      <a href="docs/assets/sponsor-qr-vn.jpg">
-        <img src="docs/assets/sponsor-qr-vn.jpg" alt="Vietnam QR — MoMo / VietQR / napas247" width="240" />
-      </a><br/>
-      <sub>📱 <b>Vietnam</b><br/>MoMo · VietQR · napas247</sub>
-    </td>
-    <td align="center" width="50%">
-      <a href="docs/assets/sponsor-qr-binance.png">
-        <img src="docs/assets/sponsor-qr-binance.png" alt="Binance Pay QR — Cris Ng" width="240" />
-      </a><br/>
-      <sub>💰 <b>Binance Pay</b><br/>Crypto / cross-border</sub>
-    </td>
-  </tr>
-</table>
-
 <p align="center">
   🌍 <b>International (card):</b>
   <a href="https://ko-fi.com/crisnguyen95">
