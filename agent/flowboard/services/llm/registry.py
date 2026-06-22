@@ -6,6 +6,7 @@ Looks up the configured provider for a feature, runs the capability gates
 ``run()``.
 
 Three CLI-backed providers are registered: Claude, Gemini, OpenAI Codex.
+Ollama is registered as a local HTTP provider.
 xAI Grok was previously wired up but never shipped a usable end-user
 CLI, so it was dropped from both UI and registry.
 """
@@ -17,6 +18,7 @@ from typing import Literal, Optional
 from .base import LLMError, LLMProvider
 from .claude import ClaudeProvider
 from .gemini import GeminiProvider
+from .ollama import OllamaProvider
 from .openai import OpenAIProvider
 from . import secrets
 
@@ -33,6 +35,7 @@ _PROVIDERS: dict[str, LLMProvider] = {
     "claude": ClaudeProvider(),
     "gemini": GeminiProvider(),
     "openai": OpenAIProvider(),
+    "ollama": OllamaProvider(),
 }
 
 

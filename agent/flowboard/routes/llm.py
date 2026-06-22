@@ -50,7 +50,7 @@ class _ConfigBody(BaseModel):
 # Whitelist for the writable feature → provider mapping. Hand-edited
 # secrets.json with garbage values is tolerated by `read_active_providers`,
 # but the HTTP surface must reject input that wouldn't route anywhere.
-_VALID_PROVIDER_NAMES = {"claude", "gemini", "openai"}
+_VALID_PROVIDER_NAMES = {"claude", "gemini", "openai", "ollama"}
 _VALID_FEATURES = ("auto_prompt", "vision", "planner")
 
 
@@ -89,6 +89,10 @@ async def list_providers() -> list[dict]:
                 or getattr(provider, "_cli_available", False)
             )
             requires_key = False  # CLI path doesn't require it
+        elif provider.name == "ollama":
+            mode = "local"
+            configured = available
+            requires_key = False
         else:
             mode = "cli"
             configured = available
@@ -121,7 +125,7 @@ async def set_provider_key(name: str, body: _ApiKeyBody) -> dict:
     if name != "openai":
         raise HTTPException(
             status_code=400,
-            detail=f"{name} doesn't accept API keys; uses CLI auth instead",
+            detail=f"{name} doesn't accept API keys",
         )
     secrets.set_api_key(name, body.apiKey)
     # Bust the relevant provider's availability cache so the next /providers

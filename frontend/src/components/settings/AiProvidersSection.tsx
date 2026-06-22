@@ -24,9 +24,8 @@ import { ProviderSetupModal } from "./ProviderSetupModal";
  * series is wasteful and slow. One ping is sufficient — if the provider
  * answers `.` once, all 3 dispatch paths can use it.
  *
- * CLI-only philosophy: only OAuth-CLI providers are surfaced
- * (Claude / Gemini / OpenAI Codex). xAI Grok was considered but never
- * shipped an end-user CLI, so it was dropped from both UI and backend.
+ * Provider philosophy: OAuth-CLI providers are surfaced alongside
+ * Ollama for local-model Auto-Prompt / Planner workflows.
  *
  * Layout:
  *   1. Cards row — 3 OAuth provider cards
@@ -42,8 +41,7 @@ import { ProviderSetupModal } from "./ProviderSetupModal";
 
 const REFRESH_INTERVAL_MS = 30_000;
 // Order matters — this is the left-to-right card order in the dialog.
-// Gemini first (Google's most popular CLI), Claude middle, OpenAI Codex last.
-const SHOWN_PROVIDERS: LLMProviderName[] = ["gemini", "claude", "openai"];
+const SHOWN_PROVIDERS: LLMProviderName[] = ["gemini", "claude", "openai", "ollama"];
 // First-run default selection. Gemini wins because it's free for personal
 // use, has the lowest CLI install friction, and (on a configured machine)
 // passes the test gate fastest. The user can still click any other card —
@@ -71,6 +69,11 @@ const CLI_REFERENCE: Record<
     installCmd: "npm install -g @openai/codex",
     docsUrl: "https://github.com/openai/codex",
     docsLabel: "Codex CLI repo",
+  },
+  ollama: {
+    installCmd: "ollama pull llama3.1",
+    docsUrl: "https://ollama.com/download",
+    docsLabel: "Ollama download",
   },
 };
 type TestState = "untested" | "testing" | "ok" | "fail";
@@ -253,6 +256,7 @@ export function AiProvidersSection() {
     claude: providers!.find((p) => p.name === "claude"),
     gemini: providers!.find((p) => p.name === "gemini"),
     openai: providers!.find((p) => p.name === "openai"),
+    ollama: providers!.find((p) => p.name === "ollama"),
   };
 
   const pendingProvider = pending ? byName[pending] : null;
@@ -270,8 +274,8 @@ export function AiProvidersSection() {
   return (
     <div className="ai-providers-section">
       <div className="ai-providers-section__intro">
-        Pick which AI powers Flowboard. One provider serves all three
-        features — switching is one decision, not three.
+        Pick which AI powers Flowboard. Ollama runs locally; use a
+        multimodal model if you also want Vision through Ollama.
       </div>
 
       {current === null && config !== null && !config.configured
@@ -512,5 +516,7 @@ function labelOf(name: LLMProviderName): string {
       return "Gemini";
     case "openai":
       return "OpenAI";
+    case "ollama":
+      return "Ollama";
   }
 }

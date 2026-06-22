@@ -35,21 +35,22 @@ def _reset_provider_caches():
 # ── GET /api/llm/providers ────────────────────────────────────────────
 
 
-def test_list_providers_returns_all_three(client, tmp_secrets_path):
-    """All 3 registered providers (Claude / Gemini / OpenAI) appear with
-    expected fields. xAI Grok was dropped — never shipped a usable CLI."""
+def test_list_providers_returns_registered_providers(client, tmp_secrets_path):
+    """Registered providers appear with expected fields."""
     with patch.object(
         registry._PROVIDERS["claude"], "is_available", return_value=False
     ), patch.object(
         registry._PROVIDERS["gemini"], "is_available", return_value=False
     ), patch.object(
         registry._PROVIDERS["openai"], "is_available", return_value=False
+    ), patch.object(
+        registry._PROVIDERS["ollama"], "is_available", return_value=False
     ):
         resp = client.get("/api/llm/providers")
     assert resp.status_code == 200
     by_name = {p["name"]: p for p in resp.json()}
-    assert set(by_name) == {"claude", "gemini", "openai"}
-    for name in ("claude", "gemini", "openai"):
+    assert set(by_name) == {"claude", "gemini", "openai", "ollama"}
+    for name in ("claude", "gemini", "openai", "ollama"):
         entry = by_name[name]
         assert "available" in entry
         assert "configured" in entry
@@ -101,6 +102,8 @@ def test_set_key_for_cli_only_provider_returns_400(client, tmp_secrets_path):
     assert resp.status_code == 400
     assert "doesn't accept API keys" in resp.json()["detail"]
     resp = client.put("/api/llm/providers/gemini", json={"apiKey": "xyz"})
+    assert resp.status_code == 400
+    resp = client.put("/api/llm/providers/ollama", json={"apiKey": "xyz"})
     assert resp.status_code == 400
 
 
@@ -263,6 +266,12 @@ def test_set_config_rejects_unknown_provider(client, tmp_secrets_path):
     resp = client.put("/api/llm/config", json={"vision": "claud3"})
     assert resp.status_code == 400
     assert "unknown provider" in resp.json()["detail"]
+
+
+def test_set_config_accepts_ollama(client, tmp_secrets_path):
+    resp = client.put("/api/llm/config", json={"auto_prompt": "ollama"})
+    assert resp.status_code == 200
+    assert client.get("/api/llm/config").json()["auto_prompt"] == "ollama"
 
 
 def test_set_config_rejects_unknown_feature(client, tmp_secrets_path):

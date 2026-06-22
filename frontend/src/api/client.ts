@@ -584,7 +584,7 @@ export async function uploadImageFromUrl(
 // See .omc/plans/multi-llm-provider-legacy.md → UI Specification → Frontend ↔
 // backend contract for the full shape.
 
-export type LLMProviderName = "claude" | "gemini" | "openai";
+export type LLMProviderName = "claude" | "gemini" | "openai" | "ollama";
 export type LLMFeature = "auto_prompt" | "vision" | "planner";
 export type LLMProviderMode = "cli" | "api" | "none";
 export type LLMLastError =

@@ -7,6 +7,7 @@ import type { LLMProviderName } from "../../api/client";
  *   - Claude: install + auth + verify (CLI subscription)
  *   - Gemini: install + auth + verify (CLI subscription)
  *   - OpenAI: 2-tab layout — Codex CLI (preferred) / API key (fallback)
+ *   - Ollama: local server + model pull
  *
  * Backdrop click + ESC + Close button all dismiss. Focus trap is
  * provided by the Settings panel backdrop already (we render inside it).
@@ -91,6 +92,7 @@ export function ProviderSetupModal({ provider, open, onClose }: ProviderSetupMod
         {provider === "openai" && (
           <OpenAiContent tab={openaiTab} onTabChange={setOpenaiTab} />
         )}
+        {provider === "ollama" && <OllamaContent />}
 
         <div className="setup-modal__footer">
           <a
@@ -259,6 +261,42 @@ function OpenAiContent({ tab, onTabChange }: OpenAiContentProps) {
   );
 }
 
+function OllamaContent() {
+  return (
+    <div className="setup-modal__body">
+      <p>
+        Flowboard talks to your local Ollama server. No cloud API key is needed.
+      </p>
+      <ol className="setup-modal__steps">
+        <li>
+          <span className="setup-modal__step-label">Install</span>
+          <a
+            className="setup-modal__step-link"
+            href="https://ollama.com/download"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            ollama.com/download ↗
+          </a>
+        </li>
+        <li>
+          <span className="setup-modal__step-label">Start server</span>
+          <CommandLine cmd="ollama serve" />
+        </li>
+        <li>
+          <span className="setup-modal__step-label">Pull default model</span>
+          <CommandLine cmd="ollama pull llama3.1" />
+        </li>
+      </ol>
+      <p className="setup-modal__note">
+        Default model is <code>llama3.1</code>. Override with{" "}
+        <code>FLOWBOARD_OLLAMA_MODEL</code>; override host with{" "}
+        <code>OLLAMA_HOST</code>.
+      </p>
+    </div>
+  );
+}
+
 function titleFor(p: LLMProviderName): string {
   switch (p) {
     case "claude":
@@ -267,6 +305,8 @@ function titleFor(p: LLMProviderName): string {
       return "🤖 Gemini CLI Setup";
     case "openai":
       return "🤖 OpenAI Setup";
+    case "ollama":
+      return "🤖 Ollama Setup";
   }
 }
 
@@ -278,6 +318,8 @@ function labelFor(p: LLMProviderName): string {
       return "Google Gemini";
     case "openai":
       return "OpenAI";
+    case "ollama":
+      return "Ollama";
   }
 }
 
@@ -289,5 +331,7 @@ function docsLinkFor(p: LLMProviderName): string {
       return "https://github.com/google/gemini-cli";
     case "openai":
       return "https://platform.openai.com/docs/quickstart";
+    case "ollama":
+      return "https://ollama.com/download";
   }
 }
