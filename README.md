@@ -18,20 +18,7 @@
   <img src="https://img.shields.io/badge/Status-personal%20local--only-orange" alt="Status"/>
 </p>
 
----
 
-<p align="center">
-  🌍 <b>International (card):</b>
-  <a href="https://ko-fi.com/crisnguyen95">
-    <img src="https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?logo=kofi&logoColor=white" alt="Ko-fi" />
-  </a>
-</p>
-
-<p align="center">
-  <sub><i>(yes — I moved this up here on purpose. Was afraid nobody scrolls past the badges 😅)</i></sub>
-</p>
-
----
 
 <p align="center">
   <b>A local-only, single-user infinite-canvas workspace for AI media workflows.</b><br/>
