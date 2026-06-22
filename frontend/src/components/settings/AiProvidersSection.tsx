@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  getOllamaConfig,
+  getOllamaModels,
   getLlmConfig,
   getLlmProviders,
+  setOllamaConfig,
   setLlmConfig,
   testLlmProvider,
   type LLMConfig,
+  type OllamaConfig,
+  type OllamaModelInfo,
   type LLMProviderInfo,
   type LLMProviderName,
 } from "../../api/client";
@@ -24,9 +29,8 @@ import { ProviderSetupModal } from "./ProviderSetupModal";
  * series is wasteful and slow. One ping is sufficient — if the provider
  * answers `.` once, all 3 dispatch paths can use it.
  *
- * CLI-only philosophy: only OAuth-CLI providers are surfaced
- * (Claude / Gemini / OpenAI Codex). xAI Grok was considered but never
- * shipped an end-user CLI, so it was dropped from both UI and backend.
+ * Provider philosophy: OAuth-CLI providers are surfaced alongside
+ * Ollama for local-model Auto-Prompt / Planner workflows.
  *
  * Layout:
  *   1. Cards row — 3 OAuth provider cards
@@ -42,8 +46,7 @@ import { ProviderSetupModal } from "./ProviderSetupModal";
 
 const REFRESH_INTERVAL_MS = 30_000;
 // Order matters — this is the left-to-right card order in the dialog.
-// Gemini first (Google's most popular CLI), Claude middle, OpenAI Codex last.
-const SHOWN_PROVIDERS: LLMProviderName[] = ["gemini", "claude", "openai"];
+const SHOWN_PROVIDERS: LLMProviderName[] = ["gemini", "claude", "openai", "ollama"];
 // First-run default selection. Gemini wins because it's free for personal
 // use, has the lowest CLI install friction, and (on a configured machine)
 // passes the test gate fastest. The user can still click any other card —
@@ -71,6 +74,11 @@ const CLI_REFERENCE: Record<
     installCmd: "npm install -g @openai/codex",
     docsUrl: "https://github.com/openai/codex",
     docsLabel: "Codex CLI repo",
+  },
+  ollama: {
+    installCmd: "ollama pull llama3.1",
+    docsUrl: "https://ollama.com/download",
+    docsLabel: "Ollama download",
   },
 };
 type TestState = "untested" | "testing" | "ok" | "fail";
@@ -108,6 +116,10 @@ export function AiProvidersSection() {
   const [applying, setApplying] = useState(false);
   const [helpFor, setHelpFor] = useState<LLMProviderName | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [ollamaModels, setOllamaModels] = useState<OllamaModelInfo[] | null>(null);
+  const [ollamaConfig, setOllamaConfigState] = useState<OllamaConfig | null>(null);
+  const [ollamaError, setOllamaError] = useState<string | null>(null);
+  const [ollamaLoading, setOllamaLoading] = useState(false);
 
   const aliveRef = useRef(true);
   useEffect(() => {
@@ -177,9 +189,80 @@ export function AiProvidersSection() {
     setTest(INITIAL_TEST);
   }
 
+  const refreshOllama = useCallback(async () => {
+    setOllamaLoading(true);
+    try {
+      const [modelsRes, cfg] = await Promise.all([
+        getOllamaModels(),
+        getOllamaConfig(),
+      ]);
+      if (!aliveRef.current) return;
+      setOllamaModels(modelsRes.models);
+      setOllamaConfigState(cfg);
+      setOllamaError(modelsRes.ok ? null : modelsRes.error || "ollama not reachable");
+    } catch (err) {
+      if (!aliveRef.current) return;
+      setOllamaError(err instanceof Error ? err.message : String(err));
+      setOllamaModels([]);
+    } finally {
+      if (aliveRef.current) setOllamaLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (pending !== "ollama") return;
+    void refreshOllama();
+  }, [pending, refreshOllama]);
+
+  useEffect(() => {
+    if (pending !== "ollama" || !ollamaModels || !ollamaConfig) return;
+    const names = new Set(ollamaModels.map((m) => m.name));
+    const visionNames = new Set(ollamaModels.filter((m) => m.vision).map((m) => m.name));
+    const patch: Partial<OllamaConfig> = {};
+    if (!names.has(ollamaConfig.textModel) && ollamaModels[0]) {
+      patch.textModel = ollamaModels[0].name;
+    }
+    if (ollamaConfig.visionModel && !visionNames.has(ollamaConfig.visionModel)) {
+      patch.visionModel = null;
+    }
+    if (patch.textModel !== undefined || patch.visionModel !== undefined) {
+      setOllamaConfigState({
+        textModel: patch.textModel ?? ollamaConfig.textModel,
+        visionModel: patch.visionModel === undefined
+          ? ollamaConfig.visionModel
+          : patch.visionModel,
+      });
+      setTest(INITIAL_TEST);
+    }
+  }, [pending, ollamaModels, ollamaConfig]);
+
+  function updateOllamaDraft(patch: Partial<OllamaConfig>) {
+    setOllamaConfigState((prev) => ({
+      textModel: patch.textModel ?? prev?.textModel ?? "llama3.1",
+      visionModel: patch.visionModel === undefined
+        ? prev?.visionModel ?? null
+        : patch.visionModel,
+    }));
+    setTest(INITIAL_TEST);
+  }
+
   async function runTest() {
     if (!pending) return;
     setTest({ state: "testing" });
+    if (pending === "ollama" && ollamaConfig) {
+      try {
+        await setOllamaConfig({
+          textModel: ollamaConfig.textModel,
+          visionModel: ollamaConfig.visionModel,
+        });
+      } catch (err) {
+        setTest({
+          state: "fail",
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
+    }
     const result = await testLlmProvider(pending);
     setTest(
       result.ok
@@ -192,6 +275,12 @@ export function AiProvidersSection() {
     if (!pending || applying) return;
     setApplying(true);
     try {
+      if (pending === "ollama" && ollamaConfig) {
+        await setOllamaConfig({
+          textModel: ollamaConfig.textModel,
+          visionModel: ollamaConfig.visionModel,
+        });
+      }
       // Single-provider model: every feature points at the same name.
       await setLlmConfig({
         auto_prompt: pending,
@@ -253,6 +342,7 @@ export function AiProvidersSection() {
     claude: providers!.find((p) => p.name === "claude"),
     gemini: providers!.find((p) => p.name === "gemini"),
     openai: providers!.find((p) => p.name === "openai"),
+    ollama: providers!.find((p) => p.name === "ollama"),
   };
 
   const pendingProvider = pending ? byName[pending] : null;
@@ -260,18 +350,20 @@ export function AiProvidersSection() {
   const testPassed = test.state === "ok";
   const testRunning = test.state === "testing";
   const selectionUnchanged = pending !== null && pending === current;
+  const ollamaReady = pending !== "ollama" || !!ollamaConfig?.textModel;
   const canApply =
     ready
+    && ollamaReady
     && testPassed
     && !applying
     && !testRunning
-    && !selectionUnchanged;
+    && (!selectionUnchanged || pending === "ollama");
 
   return (
     <div className="ai-providers-section">
       <div className="ai-providers-section__intro">
-        Pick which AI powers Flowboard. One provider serves all three
-        features — switching is one decision, not three.
+        Pick which AI powers Flowboard. Ollama runs locally; use a
+        multimodal model if you also want Vision through Ollama.
       </div>
 
       {current === null && config !== null && !config.configured
@@ -343,6 +435,16 @@ export function AiProvidersSection() {
                 result={test}
                 onTest={runTest}
               />
+              {pending === "ollama" && (
+                <OllamaModelPicker
+                  models={ollamaModels}
+                  config={ollamaConfig}
+                  error={ollamaError}
+                  loading={ollamaLoading}
+                  onRefresh={refreshOllama}
+                  onChange={updateOllamaDraft}
+                />
+              )}
               <div className="selection-panel__actions">
                 <button
                   type="button"
@@ -350,16 +452,18 @@ export function AiProvidersSection() {
                   onClick={handleApply}
                   disabled={!canApply}
                   title={
-                    selectionUnchanged
-                      ? `${labelOf(pending)} is already active.`
-                      : !testPassed
-                        ? "Run the connection test successfully to enable Apply."
-                        : `Apply ${labelOf(pending)} to all features.`
+                    !testPassed
+                      ? "Run the connection test successfully to enable Apply."
+                      : selectionUnchanged
+                      ? pending === "ollama"
+                        ? "Apply the selected local Ollama models."
+                        : `${labelOf(pending)} is already active.`
+                      : `Apply ${labelOf(pending)} to all features.`
                   }
                 >
                   {applying
                     ? "Applying…"
-                    : selectionUnchanged
+                    : selectionUnchanged && pending !== "ollama"
                       ? "Already active"
                       : "Apply changes"}
                 </button>
@@ -454,6 +558,102 @@ function ConnectionTestRow({ providerLabel, result, onTest }: ConnectionTestRowP
   );
 }
 
+interface OllamaModelPickerProps {
+  models: OllamaModelInfo[] | null;
+  config: OllamaConfig | null;
+  error: string | null;
+  loading: boolean;
+  onRefresh(): void;
+  onChange(patch: Partial<OllamaConfig>): void;
+}
+
+function OllamaModelPicker({
+  models,
+  config,
+  error,
+  loading,
+  onRefresh,
+  onChange,
+}: OllamaModelPickerProps) {
+  const allModels = models ?? [];
+  const visionModels = allModels.filter((m) => m.vision);
+  const textModel = config?.textModel ?? allModels[0]?.name ?? "llama3.1";
+  const visionModel = config?.visionModel ?? "";
+
+  return (
+    <div className="ollama-model-picker">
+      <div className="ollama-model-picker__head">
+        <span className="ollama-model-picker__title">Local Ollama models</span>
+        <button
+          type="button"
+          className="ollama-model-picker__refresh"
+          onClick={onRefresh}
+          disabled={loading}
+        >
+          {loading ? "Scanning..." : "Refresh"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="ollama-model-picker__error" role="alert">
+          {error}
+        </div>
+      )}
+
+      <label className="ollama-model-picker__field">
+        <span>Auto-Prompt / Planner model</span>
+        <select
+          value={textModel}
+          onChange={(e) => onChange({ textModel: e.target.value })}
+          disabled={allModels.length === 0}
+        >
+          {allModels.length === 0 ? (
+            <option value={textModel}>{textModel}</option>
+          ) : (
+            allModels.map((m) => (
+              <option key={m.name} value={m.name}>
+                {modelLabel(m)}
+              </option>
+            ))
+          )}
+        </select>
+      </label>
+
+      <label className="ollama-model-picker__field">
+        <span>Vision model</span>
+        <select
+          value={visionModel}
+          onChange={(e) => onChange({ visionModel: e.target.value || null })}
+          disabled={visionModels.length === 0}
+        >
+          <option value="">
+            {visionModels.length === 0 ? "No vision-capable local model detected" : "None"}
+          </option>
+          {visionModels.map((m) => (
+            <option key={m.name} value={m.name}>
+              {modelLabel(m)}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="ollama-model-picker__hint">
+        Vision detection uses Ollama metadata plus known model families. If a
+        multimodal model is missing, refresh after pulling it.
+      </div>
+    </div>
+  );
+}
+
+function modelLabel(model: OllamaModelInfo): string {
+  const meta = [
+    model.parameterSize,
+    model.quantizationLevel,
+    model.vision ? "Vision" : null,
+  ].filter(Boolean);
+  return meta.length > 0 ? `${model.name} · ${meta.join(" · ")}` : model.name;
+}
+
 /**
  * Footer shown below the test checklist with the install command + a
  * link to the CLI's official docs. Lets the user copy the upgrade
@@ -512,5 +712,7 @@ function labelOf(name: LLMProviderName): string {
       return "Gemini";
     case "openai":
       return "OpenAI";
+    case "ollama":
+      return "Ollama";
   }
 }

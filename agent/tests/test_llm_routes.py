@@ -35,21 +35,22 @@ def _reset_provider_caches():
 # ── GET /api/llm/providers ────────────────────────────────────────────
 
 
-def test_list_providers_returns_all_three(client, tmp_secrets_path):
-    """All 3 registered providers (Claude / Gemini / OpenAI) appear with
-    expected fields. xAI Grok was dropped — never shipped a usable CLI."""
+def test_list_providers_returns_registered_providers(client, tmp_secrets_path):
+    """Registered providers appear with expected fields."""
     with patch.object(
         registry._PROVIDERS["claude"], "is_available", return_value=False
     ), patch.object(
         registry._PROVIDERS["gemini"], "is_available", return_value=False
     ), patch.object(
         registry._PROVIDERS["openai"], "is_available", return_value=False
+    ), patch.object(
+        registry._PROVIDERS["ollama"], "is_available", return_value=False
     ):
         resp = client.get("/api/llm/providers")
     assert resp.status_code == 200
     by_name = {p["name"]: p for p in resp.json()}
-    assert set(by_name) == {"claude", "gemini", "openai"}
-    for name in ("claude", "gemini", "openai"):
+    assert set(by_name) == {"claude", "gemini", "openai", "ollama"}
+    for name in ("claude", "gemini", "openai", "ollama"):
         entry = by_name[name]
         assert "available" in entry
         assert "configured" in entry
@@ -67,6 +68,34 @@ def test_list_providers_no_provider_requires_key_by_default(
     resp = client.get("/api/llm/providers")
     for entry in resp.json():
         assert entry["requiresKey"] is False
+
+
+def test_list_ollama_models_endpoint(client, tmp_secrets_path):
+    ollama = registry._PROVIDERS["ollama"]
+    with patch.object(
+        ollama,
+        "list_models",
+        new=AsyncMock(return_value=[
+            {"name": "llama3.1", "vision": False},
+            {"name": "llava:latest", "vision": True},
+        ]),
+    ):
+        resp = client.get("/api/llm/ollama/models")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert [m["name"] for m in body["models"]] == ["llama3.1", "llava:latest"]
+    assert body["models"][1]["vision"] is True
+
+
+def test_ollama_config_round_trip(client, tmp_secrets_path):
+    resp = client.put(
+        "/api/llm/ollama/config",
+        json={"textModel": "mistral", "visionModel": "llava:latest"},
+    )
+    assert resp.status_code == 200
+    cfg = client.get("/api/llm/ollama/config").json()
+    assert cfg == {"textModel": "mistral", "visionModel": "llava:latest"}
 
 
 def test_list_providers_does_not_leak_api_keys(client, tmp_secrets_path):
@@ -101,6 +130,8 @@ def test_set_key_for_cli_only_provider_returns_400(client, tmp_secrets_path):
     assert resp.status_code == 400
     assert "doesn't accept API keys" in resp.json()["detail"]
     resp = client.put("/api/llm/providers/gemini", json={"apiKey": "xyz"})
+    assert resp.status_code == 400
+    resp = client.put("/api/llm/providers/ollama", json={"apiKey": "xyz"})
     assert resp.status_code == 400
 
 
@@ -263,6 +294,12 @@ def test_set_config_rejects_unknown_provider(client, tmp_secrets_path):
     resp = client.put("/api/llm/config", json={"vision": "claud3"})
     assert resp.status_code == 400
     assert "unknown provider" in resp.json()["detail"]
+
+
+def test_set_config_accepts_ollama(client, tmp_secrets_path):
+    resp = client.put("/api/llm/config", json={"auto_prompt": "ollama"})
+    assert resp.status_code == 200
+    assert client.get("/api/llm/config").json()["auto_prompt"] == "ollama"
 
 
 def test_set_config_rejects_unknown_feature(client, tmp_secrets_path):

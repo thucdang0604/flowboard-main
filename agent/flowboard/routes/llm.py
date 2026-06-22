@@ -47,10 +47,15 @@ class _ConfigBody(BaseModel):
     planner: Optional[str] = None
 
 
+class _OllamaConfigBody(BaseModel):
+    textModel: Optional[str] = None
+    visionModel: Optional[str] = None
+
+
 # Whitelist for the writable feature → provider mapping. Hand-edited
 # secrets.json with garbage values is tolerated by `read_active_providers`,
 # but the HTTP surface must reject input that wouldn't route anywhere.
-_VALID_PROVIDER_NAMES = {"claude", "gemini", "openai"}
+_VALID_PROVIDER_NAMES = {"claude", "gemini", "openai", "ollama"}
 _VALID_FEATURES = ("auto_prompt", "vision", "planner")
 
 
@@ -89,6 +94,10 @@ async def list_providers() -> list[dict]:
                 or getattr(provider, "_cli_available", False)
             )
             requires_key = False  # CLI path doesn't require it
+        elif provider.name == "ollama":
+            mode = "local"
+            configured = available
+            requires_key = False
         else:
             mode = "cli"
             configured = available
@@ -103,6 +112,45 @@ async def list_providers() -> list[dict]:
             "mode": mode,
         })
     return out
+
+
+# ── Ollama model discovery / config ───────────────────────────────────
+
+
+@router.get("/ollama/models")
+async def list_ollama_models() -> dict:
+    provider = registry.get_provider("ollama")
+    if provider is None or not hasattr(provider, "list_models"):
+        raise HTTPException(status_code=404, detail="ollama provider not registered")
+    models = await provider.list_models(include_details=True)  # type: ignore[attr-defined]
+    if models is None:
+        return {"ok": False, "error": "ollama not reachable", "models": []}
+    return {"ok": True, "models": models}
+
+
+@router.get("/ollama/config")
+def get_ollama_config() -> dict:
+    provider = registry.get_provider("ollama")
+    settings = secrets.get_provider_settings("ollama")
+    text_model = settings.get("textModel")
+    vision_model = settings.get("visionModel")
+    if not isinstance(text_model, str) or not text_model:
+        text_model = getattr(provider, "text_model", None) or "llama3.1"
+    if not isinstance(vision_model, str) or not vision_model:
+        vision_model = getattr(provider, "vision_model", None)
+    return {"textModel": text_model, "visionModel": vision_model}
+
+
+@router.put("/ollama/config")
+def set_ollama_config(body: _OllamaConfigBody) -> dict:
+    patch = body.model_dump(exclude_unset=True)
+    if not patch:
+        raise HTTPException(status_code=400, detail="no fields to update")
+    secrets.set_provider_settings("ollama", patch)
+    provider = registry.get_provider("ollama")
+    if provider is not None and hasattr(provider, "reset_cache"):
+        provider.reset_cache()
+    return {"ok": True}
 
 
 # ── PUT /api/llm/providers/{name} ─────────────────────────────────────
@@ -121,7 +169,7 @@ async def set_provider_key(name: str, body: _ApiKeyBody) -> dict:
     if name != "openai":
         raise HTTPException(
             status_code=400,
-            detail=f"{name} doesn't accept API keys; uses CLI auth instead",
+            detail=f"{name} doesn't accept API keys",
         )
     secrets.set_api_key(name, body.apiKey)
     # Bust the relevant provider's availability cache so the next /providers
