@@ -99,6 +99,35 @@ def set_api_key(provider: str, key: Optional[str]) -> None:
     write(doc)
 
 
+# ── Provider settings helpers ──────────────────────────────────────────
+
+def get_provider_settings(provider: str) -> dict:
+    """Return provider-specific non-secret settings.
+
+    Shape today:
+      {"ollama": {"textModel": "llama3.1", "visionModel": "llava:latest"}}
+    """
+    doc = read()
+    settings = doc.get("providerSettings") or {}
+    row = settings.get(provider) if isinstance(settings, dict) else None
+    return dict(row) if isinstance(row, dict) else {}
+
+
+def set_provider_settings(provider: str, patch: dict) -> None:
+    """Merge provider-specific settings and persist atomically."""
+    doc = read()
+    settings = dict(doc.get("providerSettings") or {})
+    current = dict(settings.get(provider) or {})
+    for key, val in patch.items():
+        if val is None or val == "":
+            current.pop(key, None)
+        else:
+            current[key] = val
+    settings[provider] = current
+    doc["providerSettings"] = settings
+    write(doc)
+
+
 # ── Active-providers helpers ───────────────────────────────────────────
 
 # Features the UI configures. Order matters only for display; iteration

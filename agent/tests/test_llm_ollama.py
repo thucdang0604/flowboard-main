@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from flowboard.services.llm.base import LLMError
+from flowboard.services.llm import secrets
 from flowboard.services.llm.ollama import OllamaProvider
 
 
@@ -40,6 +41,8 @@ class _FakeClient:
         return _FakeResponse(200, {"models": [{"name": "llama3.1"}]})
 
     async def post(self, url: str, json: dict):
+        if url.endswith("/api/show"):
+            return _FakeResponse(200, {"capabilities": ["completion"]})
         _FakeClient.last_post_payload = json
         return _FakeResponse(200, {"response": " local answer "})
 
@@ -56,6 +59,8 @@ async def test_ollama_available_when_model_is_present(monkeypatch):
 @pytest.mark.asyncio
 async def test_ollama_run_posts_generate_payload(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("flowboard.services.llm.ollama.httpx.AsyncClient", _FakeClient)
+    monkeypatch.setenv("FLOWBOARD_SECRETS_PATH", str(tmp_path / "secrets.json"))
+    secrets.set_provider_settings("ollama", {"visionModel": "llama3.1"})
     img = tmp_path / "ref.png"
     img.write_bytes(b"fake")
 
@@ -77,14 +82,34 @@ async def test_ollama_run_posts_generate_payload(monkeypatch, tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_ollama_missing_model_is_unavailable(monkeypatch):
-    class MissingModelClient(_FakeClient):
+async def test_ollama_lists_vision_models_from_capabilities(monkeypatch):
+    class VisionClient(_FakeClient):
         async def get(self, url: str):
-            return _FakeResponse(200, {"models": [{"name": "other"}]})
+            return _FakeResponse(200, {"models": [{"name": "llava:latest"}]})
+
+        async def post(self, url: str, json: dict):
+            if url.endswith("/api/show"):
+                return _FakeResponse(200, {"capabilities": ["completion", "vision"]})
+            return await super().post(url, json)
+
+    monkeypatch.setattr("flowboard.services.llm.ollama.httpx.AsyncClient", VisionClient)
+
+    provider = OllamaProvider()
+    models = await provider.list_models()
+    assert models is not None
+    assert models[0]["name"] == "llava:latest"
+    assert models[0]["vision"] is True
+
+
+@pytest.mark.asyncio
+async def test_ollama_no_models_is_unavailable(monkeypatch):
+    class NoModelClient(_FakeClient):
+        async def get(self, url: str):
+            return _FakeResponse(200, {"models": []})
 
     monkeypatch.setattr(
         "flowboard.services.llm.ollama.httpx.AsyncClient",
-        MissingModelClient,
+        NoModelClient,
     )
 
     provider = OllamaProvider()

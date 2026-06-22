@@ -70,6 +70,34 @@ def test_list_providers_no_provider_requires_key_by_default(
         assert entry["requiresKey"] is False
 
 
+def test_list_ollama_models_endpoint(client, tmp_secrets_path):
+    ollama = registry._PROVIDERS["ollama"]
+    with patch.object(
+        ollama,
+        "list_models",
+        new=AsyncMock(return_value=[
+            {"name": "llama3.1", "vision": False},
+            {"name": "llava:latest", "vision": True},
+        ]),
+    ):
+        resp = client.get("/api/llm/ollama/models")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert [m["name"] for m in body["models"]] == ["llama3.1", "llava:latest"]
+    assert body["models"][1]["vision"] is True
+
+
+def test_ollama_config_round_trip(client, tmp_secrets_path):
+    resp = client.put(
+        "/api/llm/ollama/config",
+        json={"textModel": "mistral", "visionModel": "llava:latest"},
+    )
+    assert resp.status_code == 200
+    cfg = client.get("/api/llm/ollama/config").json()
+    assert cfg == {"textModel": "mistral", "visionModel": "llava:latest"}
+
+
 def test_list_providers_does_not_leak_api_keys(client, tmp_secrets_path):
     secrets.set_api_key("openai", "sk-leaky-secret-1234567890")
     resp = client.get("/api/llm/providers")

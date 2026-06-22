@@ -586,7 +586,7 @@ export async function uploadImageFromUrl(
 
 export type LLMProviderName = "claude" | "gemini" | "openai" | "ollama";
 export type LLMFeature = "auto_prompt" | "vision" | "planner";
-export type LLMProviderMode = "cli" | "api" | "none";
+export type LLMProviderMode = "cli" | "api" | "local" | "none";
 export type LLMLastError =
   | "not_installed"
   | "not_authenticated"
@@ -603,6 +603,28 @@ export interface LLMProviderInfo {
   mode: LLMProviderMode;
   lastError?: LLMLastError;
   lastTest?: { ok: boolean; latencyMs?: number; error?: string };
+}
+
+export interface OllamaModelInfo {
+  name: string;
+  size?: number | null;
+  modifiedAt?: string | null;
+  family?: string | null;
+  families: string[];
+  parameterSize?: string | null;
+  quantizationLevel?: string | null;
+  vision: boolean;
+}
+
+export interface OllamaModelsResponse {
+  ok: boolean;
+  error?: string;
+  models: OllamaModelInfo[];
+}
+
+export interface OllamaConfig {
+  textModel: string;
+  visionModel: string | null;
 }
 
 export interface LLMConfig {
@@ -675,6 +697,30 @@ export async function testLlmProvider(
   if (!res.ok) {
     return { ok: false, error: `HTTP ${res.status}` };
   }
+  return res.json();
+}
+
+export async function getOllamaModels(): Promise<OllamaModelsResponse> {
+  const res = await fetch("/api/llm/ollama/models");
+  if (!res.ok) throw new Error(`getOllamaModels: ${res.status}`);
+  return res.json();
+}
+
+export async function getOllamaConfig(): Promise<OllamaConfig> {
+  const res = await fetch("/api/llm/ollama/config");
+  if (!res.ok) throw new Error(`getOllamaConfig: ${res.status}`);
+  return res.json();
+}
+
+export async function setOllamaConfig(
+  patch: Partial<OllamaConfig>,
+): Promise<{ ok: boolean }> {
+  const res = await fetch("/api/llm/ollama/config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(await extractErrorMessage(res));
   return res.json();
 }
 
