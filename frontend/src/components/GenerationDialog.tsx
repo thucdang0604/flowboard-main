@@ -216,6 +216,7 @@ export function GenerationDialog() {
   const [prompt, setPrompt] = useState(openDialog.prompt);
   const [aspectRatio, setAspectRatio] = useState<AspectKey>("IMAGE_ASPECT_RATIO_LANDSCAPE");
   const [variants, setVariants] = useState(1);
+  const [identityLock, setIdentityLock] = useState(false);
   const [camera, setCamera] = useState<CameraKey>("static");
   // Storyboard layout. The node dispatches via the standard image
   // handler with a locked template prompt wrapping the user's topic
@@ -384,6 +385,7 @@ export function GenerationDialog() {
         })
         .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
     : [];
+  const canUseIdentityLock = targetType === "image" && refSourceNodes.length > 0;
 
   // Reset form when dialog opens for a different node
   useEffect(() => {
@@ -430,14 +432,15 @@ export function GenerationDialog() {
           nextAspect = "IMAGE_ASPECT_RATIO_LANDSCAPE";
         }
       }
-      setAspectRatio(nextAspect);
-      setVariants(1);
-      setCamera("static");
       // Hydrate storyboard grid from existing node data when reopening.
       // Fresh nodes + legacy values ("3x3" from 1.2.15-1.2.18) → "2x2".
       const openNodeData = useBoardStore
         .getState()
         .nodes.find((n) => n.id === rfId)?.data;
+      setAspectRatio(nextAspect);
+      setVariants(1);
+      setIdentityLock(openNodeData?.identityMode === true);
+      setCamera("static");
       setStoryboardGrid(normaliseStoryboardGrid(openNodeData?.storyboardGrid));
       setCharGender(null);
       setCharCountry(null);
@@ -509,6 +512,16 @@ export function GenerationDialog() {
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [openVariantPicker]);
+
+  useEffect(() => {
+    if (!canUseIdentityLock && identityLock) {
+      setIdentityLock(false);
+      return;
+    }
+    if (identityLock && variants !== 1) {
+      setVariants(1);
+    }
+  }, [canUseIdentityLock, identityLock, variants]);
 
   // Focus trap
   useEffect(() => {
@@ -674,7 +687,7 @@ export function GenerationDialog() {
       // the same node. Cleared in finally below regardless of outcome.
       useBoardStore.getState().updateNodeData(rfId, { autoPromptStatus: "pending" });
       try {
-        if (!isVideo && variants > 1) {
+        if (!isVideo && !identityLock && variants > 1) {
           const res = await autoPromptBatchApi(dbId, variants);
           perVariantPrompts = res.prompts;
           // Show all N prompts joined so the user can verify before
@@ -685,7 +698,10 @@ export function GenerationDialog() {
           finalPrompt = res.prompts[0] ?? "";
           setPrompt(res.prompts.join("\n\n— variant —\n\n"));
         } else {
-          const res = await autoPromptApi(dbId, isVideo ? { camera } : undefined);
+          const res = await autoPromptApi(
+            dbId,
+            isVideo ? { camera } : { identityMode: identityLock },
+          );
           finalPrompt = res.prompt;
           setPrompt(finalPrompt);
         }
@@ -731,8 +747,9 @@ export function GenerationDialog() {
       dispatchGeneration(rfId, {
         prompt: finalPrompt,
         aspectRatio,
-        variantCount: variants,
+        variantCount: identityLock ? 1 : variants,
         prompts: perVariantPrompts,
+        identityMode: identityLock,
       });
     }
     closeGenerationDialog();
@@ -1140,6 +1157,31 @@ export function GenerationDialog() {
           </div>
         )}
 
+        {canUseIdentityLock && (
+          <div className="gen-dialog__field">
+            <label className="identity-lock-toggle">
+              <input
+                type="checkbox"
+                checked={identityLock}
+                onChange={(e) => {
+                  setIdentityLock(e.target.checked);
+                  if (e.target.checked) setVariants(1);
+                }}
+                disabled={isWorking}
+              />
+              <span className="identity-lock-toggle__body">
+                <span className="identity-lock-toggle__title">
+                  Identity Lock
+                  <InfoTip tip="For real-person / wedding images. Uses one variant, adds face-preservation instructions, and tells Flow to keep each referenced person's identity instead of exploring model-like faces." />
+                </span>
+                <span className="identity-lock-toggle__hint">
+                  Giữ khuôn mặt giống reference hơn; phù hợp ảnh cưới/chân dung.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
+
         {/* Aspect ratio — irrelevant for prompt nodes (text-only). */}
         {!isPrompt && (
           <div className="gen-dialog__field">
@@ -1278,7 +1320,7 @@ export function GenerationDialog() {
             <div className="variants-stepper">
               <button
                 type="button"
-                disabled={variants <= 1}
+                disabled={variants <= 1 || identityLock}
                 aria-label="Decrease variants"
                 onClick={() => setVariants((v) => Math.max(1, v - 1))}
               >
@@ -1287,13 +1329,15 @@ export function GenerationDialog() {
               <span>{variants}</span>
               <button
                 type="button"
-                disabled={variants >= 4}
+                disabled={variants >= 4 || identityLock}
                 aria-label="Increase variants"
                 onClick={() => setVariants((v) => Math.min(4, v + 1))}
               >
                 +
               </button>
-              <span className="variants-stepper__hint">1–4 images per request</span>
+              <span className="variants-stepper__hint">
+                {identityLock ? "locked to 1 for identity consistency" : "1–4 images per request"}
+              </span>
             </div>
           </div>
         )}

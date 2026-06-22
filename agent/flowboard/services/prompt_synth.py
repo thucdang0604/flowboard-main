@@ -105,6 +105,22 @@ _MULTI_SUBJECT_CLAUSE = (
     "the 280 cap) since each subject needs description."
 )
 
+_IDENTITY_LOCK_IMAGE_CLAUSE = (
+    "\n\nIDENTITY LOCK MODE — CRITICAL: This is a real-person portrait / "
+    "wedding-photo workflow. Preserve facial identity above style, pose, "
+    "wardrobe, and background. The output prompt must explicitly instruct "
+    "Flow to keep the exact same person from each referenced face: facial "
+    "proportions, eye shape, nose bridge and tip, lips, jawline, cheekbone "
+    "structure, skin tone, hairline, hairstyle, and natural age cues. Do "
+    "NOT beautify into a generic model, do NOT blend faces between "
+    "references, do NOT change ethnicity, do NOT change apparent age, and "
+    "do NOT over-stylise makeup or skin texture. Use calm, close-to-camera "
+    "framing: frontal or slight three-quarter face angle, natural expression, "
+    "soft realistic wedding/portrait lighting. Keep pose changes modest so "
+    "the face remains readable. Mention each person by their `ref_image_N` "
+    "label when multiple people are present."
+)
+
 # Intent-first motion direction. The earlier version prescribed scene→
 # action vocab + mandatory 3-beat structure + action-verb-only language,
 # which made every clip feel theatrical and "model executing a pose pool".
@@ -351,7 +367,7 @@ def _distinct_subjects(records: list[dict]) -> list[str]:
     return ordered
 
 
-def _image_system_prompt(subject_count: int) -> str:
+def _image_system_prompt(subject_count: int, *, identity_mode: bool = False) -> str:
     """Branch the image system prompt on subject count.
 
     1 subject → standard editorial single-model prompt.
@@ -359,9 +375,12 @@ def _image_system_prompt(subject_count: int) -> str:
     couple/group shot referencing every subject by their positional
     `ref_image_N` label.
     """
+    prompt = _SYNTH_SYSTEM_IMAGE
     if subject_count >= 2:
-        return _SYNTH_SYSTEM_IMAGE + _MULTI_SUBJECT_CLAUSE
-    return _SYNTH_SYSTEM_IMAGE
+        prompt += _MULTI_SUBJECT_CLAUSE
+    if identity_mode:
+        prompt += _IDENTITY_LOCK_IMAGE_CLAUSE
+    return prompt
 
 
 def _format_user_message(records: list[dict], target: Node) -> str:
@@ -492,7 +511,11 @@ _BATCH_SUFFIX = (
 
 
 async def auto_prompt_batch(
-    node_id: int, count: int, *, camera: Optional[str] = None
+    node_id: int,
+    count: int,
+    *,
+    camera: Optional[str] = None,
+    identity_mode: bool = False,
 ) -> list[str]:
     """Compose N pose-distinct prompts in a single Claude call.
 
@@ -503,8 +526,10 @@ async def auto_prompt_batch(
     """
     if count < 1:
         raise PromptSynthError("count must be >= 1")
+    if identity_mode and count > 1:
+        raise PromptSynthError("identity mode only supports one image variant at a time")
     if count == 1:
-        single = await auto_prompt(node_id, camera=camera)
+        single = await auto_prompt(node_id, camera=camera, identity_mode=identity_mode)
         return [single]
 
     records, target = _collect_upstream(node_id)
@@ -516,13 +541,18 @@ async def auto_prompt_batch(
     if is_video:
         base_system = _video_system_prompt(camera, subject_count)
     else:
-        base_system = _image_system_prompt(subject_count)
+        base_system = _image_system_prompt(subject_count, identity_mode=identity_mode)
     system_prompt = base_system + _BATCH_SUFFIX.format(count=count)
     user_msg = _format_user_message(records, target)
 
     async with record_activity(
         "auto_prompt_batch",
-        params={"node_id": node_id, "count": count, "camera": camera},
+        params={
+            "node_id": node_id,
+            "count": count,
+            "camera": camera,
+            "identity_mode": identity_mode,
+        },
         node_id=node_id,
     ) as activity:
         try:
@@ -568,7 +598,12 @@ async def auto_prompt_batch(
         return prompts
 
 
-async def auto_prompt(node_id: int, *, camera: Optional[str] = None) -> str:
+async def auto_prompt(
+    node_id: int,
+    *,
+    camera: Optional[str] = None,
+    identity_mode: bool = False,
+) -> str:
     """Compose a generation prompt by walking upstream + asking the
     configured Auto-Prompt provider.
 
@@ -589,12 +624,12 @@ async def auto_prompt(node_id: int, *, camera: Optional[str] = None) -> str:
     if is_video:
         system_prompt = _video_system_prompt(camera, subject_count)
     else:
-        system_prompt = _image_system_prompt(subject_count)
+        system_prompt = _image_system_prompt(subject_count, identity_mode=identity_mode)
     user_msg = _format_user_message(records, target)
 
     async with record_activity(
         "auto_prompt",
-        params={"node_id": node_id, "camera": camera},
+        params={"node_id": node_id, "camera": camera, "identity_mode": identity_mode},
         node_id=node_id,
     ) as activity:
         try:

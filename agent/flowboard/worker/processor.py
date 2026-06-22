@@ -23,6 +23,22 @@ from flowboard.services.flow_sdk import get_flow_sdk
 logger = logging.getLogger(__name__)
 
 
+IDENTITY_LOCK_PROMPT_GUARD = (
+    "Identity lock: preserve the exact facial identity of each referenced "
+    "person. Keep facial proportions, eye shape, nose, lips, jawline, "
+    "cheekbones, skin tone, hairline, hairstyle, and natural age cues the "
+    "same as the reference image(s). Do not beautify into a generic model, "
+    "do not blend faces between people, and keep the face clearly readable "
+    "with a frontal or slight three-quarter angle."
+)
+
+
+def _apply_identity_lock_prompt(prompt: str) -> str:
+    if "Identity lock:" in prompt:
+        return prompt
+    return f"{IDENTITY_LOCK_PROMPT_GUARD} {prompt}"
+
+
 # type → coroutine(params) → (result_dict, error_or_None)
 Handler = Callable[[dict], Awaitable[tuple[dict, Optional[str]]]]
 
@@ -106,6 +122,9 @@ async def _handle_gen_image(params: dict) -> tuple[dict, Optional[str]]:
     variant_count = 1
     if isinstance(raw_count, int) and raw_count > 0:
         variant_count = raw_count
+    identity_mode = params.get("identity_mode") is True
+    if identity_mode:
+        variant_count = 1
     # Per-variant prompts (optional). When provided, each variant gets its
     # own text — used by auto-prompt batch mode so variants don't collapse
     # to the same stance.
@@ -117,8 +136,12 @@ async def _handle_gen_image(params: dict) -> tuple[dict, Optional[str]]:
     image_model = params.get("image_model")
     if not isinstance(image_model, str) or not image_model.strip():
         image_model = None
+    final_prompt = prompt.strip()
+    if identity_mode:
+        final_prompt = _apply_identity_lock_prompt(final_prompt)
+        per_variant_prompts = None
     resp = await get_flow_sdk().gen_image(
-        prompt=prompt.strip(),
+        prompt=final_prompt,
         project_id=project_id,
         aspect_ratio=aspect,
         paygate_tier=tier,
